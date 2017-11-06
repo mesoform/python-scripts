@@ -120,6 +120,18 @@ def __import_objects(component, import_dir):
          except ZabbixAPIException as err:
              print(err)
 
+def __import_actions(component, import_dir):
+    file = '{}/{}.json'.format(import_dir, component)
+    with open(file, 'r') as f:
+         component_data = f.read()
+         __info('Importing {}...', component)
+         actions = json.loads(component_data)
+         for action in actions:
+             __zbx_api.action.create(action)
+         #try:
+         #   __zbx_api.action.create(actions)
+         #except ZabbixAPIException as err:
+         #   print(err)
 
 def import_hostgroups(import_dir):
     __import_objects('hostgroups', import_dir)
@@ -133,15 +145,19 @@ def import_hosts(import_dir):
     __import_objects('hosts', import_dir)
 
 
-def import_app(zbx_user, zbx_password, zbx_host, import_dir):
+def import_actions(import_dir):
+    __import_actions('reg_actions_import', import_dir)
+
+
+def import_app(import_dir):
     if not os.path.isdir(import_dir):
         os.makedirs(import_dir)
 
-    initiate_zabbix_api(zbx_host, zbx_user, zbx_password)
     for import_fn in [
                       #import_hostgroups,
                       #import_templates,
-                      #import_hosts
+                      #import_hosts,
+                      import_actions
                      ]:
         import_fn(import_dir)
 
@@ -170,5 +186,6 @@ if __name__ == '__main__':
     config_import_dir = os.getenv(__ENV_ZBX_CONFIG_DIR) or \
                         os.path.abspath(__file__)
 
-    import_app(user, password, host, config_import_dir)
-    export_actions_data(config_import_dir)
+    initiate_zabbix_api(host, user, password)
+    #export_actions_data(config_import_dir)
+    import_app(config_import_dir)
