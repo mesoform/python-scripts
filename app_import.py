@@ -133,6 +133,7 @@ def __import_actions(component, import_dir):
          #except ZabbixAPIException as err:
          #   print(err)
 
+
 def import_hostgroups(import_dir):
     __import_objects('hostgroups', import_dir)
 
@@ -149,20 +150,15 @@ def import_actions(import_dir):
     __import_actions('reg_actions_import', import_dir)
 
 
-def import_app(import_dir):
+def import_app(import_dir, components):
     if not os.path.isdir(import_dir):
         os.makedirs(import_dir)
 
-    for import_fn in [
-                      #import_hostgroups,
-                      #import_templates,
-                      #import_hosts,
-                      import_actions
-                     ]:
+    for import_fn in components:
         import_fn(import_dir)
 
 
-def export_actions_data(export_dir):
+def exp_act_data_dest(export_dir):
 
     data = defaultdict(list)
 
@@ -179,13 +175,71 @@ def export_actions_data(export_dir):
          export_file.write(json.dumps(data))
 
 
+def get_all(act_line, key, orig, dest):
+    if type(act_line) == str:
+        act_line = json.loads(act_line)
+    if type(act_line) is dict:
+        for actjsonkey in act_line.copy():
+            if type(act_line[actjsonkey]) in (list, dict):
+                get_all(act_line[actjsonkey], key, orig, dest)
+            elif actjsonkey == key:
+                if key == 'templateid':
+                    for tmplorig in orig["templates"]:
+                        if tmplorig['templateid'] == act_line[actjsonkey]:
+                            hostorig = tmplorig['host']
+                            for tmpldest in dest["templates"]:
+                                if hostorig == tmpldest['host']:
+                                    act_line[actjsonkey] = tmpldest['templateid']
+                elif key == 'groupid':
+                    for grporig in orig["hostgroups"]:
+                        if grporig['groupid'] == act_line[actjsonkey]:
+                            hostorig = grporig['name']
+                            for grpdest in dest["hostgroups"]:
+                                if hostorig == grpdest['name']:
+                                    act_line[actjsonkey] = grpdest['groupid']
+                            break
+            elif actjsonkey != key:
+                if actjsonkey in ('actionid', 'maintenance_mode', 'eval_formula', 'operationid'):
+                    del act_line[actjsonkey]
+    elif type(act_line) is list:
+        for item in act_line:
+            if type(item) in (list, dict):
+                get_all(item, key, orig, dest)
+                
+                
+def gen_imp_act_file(files_dir):
+    actions_file = '{}/reg_actions.json'.format(files_dir)
+    actions_orig = '{}/actions_data_orig.json'.format(files_dir)
+    actions_dest = '{}/actions_data_dest.json'.format(files_dir)
+
+    actions_data = open(actions_file)
+    data_orig = open(actions_orig)
+    data_dest = open(actions_dest)
+    data = json.load(actions_data)
+    orig = json.load(data_orig)
+    dest = json.load(data_dest)
+    for act_line in data:
+        get_all(act_line, 'groupid', orig, dest)
+        get_all(act_line, 'templateid', orig, dest)
+        
+    target_path = '{}/reg_actions_import.json'.format(files_dir)
+    with open(target_path, "w") as export_file:
+        export_file.write(json.dumps(data))
+
+    actions_data.close()
+
+
 if __name__ == '__main__':
     host = os.getenv(__ENV_ZABBIX_API_HOST) or __ZBX_API_DEV
     user = os.environ[__ENV_USERNAME]
     password = os.environ[__ENV_PASSWORD]
-    config_import_dir = os.getenv(__ENV_ZBX_CONFIG_DIR) or \
+    config_dir = os.getenv(__ENV_ZBX_CONFIG_DIR) or \
                         os.path.abspath(__file__)
 
     initiate_zabbix_api(host, user, password)
-    #export_actions_data(config_import_dir)
-    import_app(config_import_dir)
+    to_import = [import_hostgroups, import_templates, import_hosts]
+    import_app(config_dir, to_import)
+    exp_act_data_dest(config_dir)
+    gen_imp_act_file(config_dir)
+    to_import = [import_actions]
+    import_app(config_dir, to_import)
